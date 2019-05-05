@@ -21,7 +21,6 @@ void main(void)
     printk("dev %p name %s\n", dev, dev->config->name);
 
 	while (1) {
-		//struct sensor_value temp, press, humidity;
         float accel[3], gyro[3], mag[3];
         
         sensor_sample_fetch(dev);
@@ -33,12 +32,6 @@ void main(void)
         printf("Gyro:  %.6f, %.6f, %.6f\n", gyro[0],  gyro[1],  gyro[2]);
         printf("Mag:   %.6f, %.6f, %.6f\n", mag[0],   mag[1],   mag[2]);
         
-		//sensor_channel_get(dev, SENSOR_CHAN_HUMIDITY, &humidity);
-
-//        printk("temp: %d.%06d; press: %d.%06d; humidity: %d.%06d\n",
-//              temp.val1, temp.val2, press.val1, press.val2,
-//              humidity.val1, humidity.val2);
-
 		k_sleep(1000);
 	}
 }
