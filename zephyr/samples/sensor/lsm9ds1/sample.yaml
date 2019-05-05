@@ -1,0 +1,18 @@
+sample:
+  name: LSM9DS1 Sensor sample
+tests:
+  sample.sensor.lsm9ds1:
+    harness: console
+    tags: sensors
+    depends_on: i2c lsm9ds1
+    harness_config:
+        type: one_line
+        fixture: fixture_i2c_lsm9ds1
+  sample.sensor.lsm9ds1.i2c:
+    harness: console
+    tags: sensors
+    depends_on: i2c lsm9ds1
+    extra_args: "CONF_FILE=prj.conf"
+    harness_config:
+        type: one_line
+        fixture: fixture_i2c_lsm9ds1
