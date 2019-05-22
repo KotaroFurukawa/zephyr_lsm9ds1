@@ -7,12 +7,16 @@ tests:
     depends_on: i2c lsm9ds1
     harness_config:
         type: one_line
-        fixture: fixture_i2c_lsm9ds1
-  sample.sensor.lsm9ds1.i2c:
+        regex:
+            - "temp: (.*); press: (.*); humidity: (.*)"
+        fixture: fixture_i2c_bme280
+  sample.sensor.bme280.spi:
     harness: console
     tags: sensors
-    depends_on: i2c lsm9ds1
-    extra_args: "CONF_FILE=prj.conf"
+    depends_on: spi bme280
+    extra_args: "CONF_FILE=prj_spi.conf"
     harness_config:
         type: one_line
-        fixture: fixture_i2c_lsm9ds1
+        regex:
+            - "temp: (.*); press: (.*); humidity: (.*)"
+        fixture: fixture_spi_bme280

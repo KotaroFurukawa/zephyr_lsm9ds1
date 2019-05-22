@@ -8,13 +8,13 @@
 #include <i2c.h>
 #include <init.h>
 #include <misc/byteorder.h>
-#include <sensor.h>
+
 #include <logging/log.h>
 
 #include "lsm9ds1.h"
 
-
-// See also LSM9DS1 Register Map and Descriptions, http://www.st.com/st-web-ui/static/active/en/resource/technical/document/datasheet/DM00103319.pdf
+// See also LSM9DS1 Register Map and Descriptions,
+// http://www.st.com/st-web-ui/static/active/en/resource/technical/document/datasheet/DM00103319.pdf
 //
 // Accelerometer and Gyroscope registers
 #define LSM9DS1XG_ACT_THS        0x04
@@ -205,16 +205,13 @@ uint8_t Mmode = MMode_HighPerformance;  // magnetometer operation mode
 float aRes, gRes, mRes;      // scale resolutions per LSB for the sensors
 
 int16_t accelCount[3], gyroCount[3], magCount[3];  // Stores the 16-bit signed accelerometer, gyro, and mag sensor output
+
 float gyroBias[3] = {0, 0, 0}, accelBias[3] = {0, 0, 0},  magBias[3] = {0, 0, 0}; // Bias corrections for gyro, accelerometer, and magnetometer
 
 // I2C read/write functions for the LSM9DS1and AK8963 sensors
 static void writeByte(uint8_t address, uint8_t subAddress, uint8_t data)
 {
-    if (i2c_reg_write_byte(lsm9ds1_driver.i2c, address, subAddress, data) < 0) {
-        //return -EIO;
-    }
-    
-    //return 0;
+    i2c_reg_write_byte(lsm9ds1_driver.i2c, address, subAddress, data);
 }
 
 static uint8_t readByte(uint8_t address, uint8_t subAddress)
@@ -308,7 +305,7 @@ static void readAccelData(int16_t * destination)
         destination[0] = ((int16_t)rawData[1] << 8) | rawData[0] ;  // Turn the MSB and LSB into a signed 16-bit value
         destination[1] = ((int16_t)rawData[3] << 8) | rawData[2] ;
         destination[2] = ((int16_t)rawData[5] << 8) | rawData[4] ;
-        printk("readAccelData\n");
+        //printk("readAccelData\n");
     }
 }
 
@@ -333,11 +330,11 @@ static void readMagData(int16_t * destination)
     }
 }
 
-static int16_t readTempData()
+static void readTempData(int16_t destination)
 {
-    uint8_t rawData[2];  // x/y/z gyro register data stored here
+    uint8_t rawData[2];
     if ( readBytes(LSM9DS1XG_ADDRESS, LSM9DS1XG_OUT_TEMP_L, 2, rawData) == 0) {  // Read the two raw data registers sequentially into data array
-        return (((int16_t)rawData[1] << 8) | rawData[0]);  // Turn the MSB and LSB into a 16-bit signed value
+        destination = (((int16_t)rawData[1] << 8) | rawData[0]);  // Turn the MSB and LSB into a 16-bit signed value
     }
 }
 
@@ -484,13 +481,11 @@ static void magcalLSM9DS1(float * dest1)
     printk("Mag Calibration done!\n");
 }
 
-static int lsm9ds1_channel_get(struct device *dev,
+static void lsm9ds1_channel_get(struct device *dev,
                                enum sensor_channel chan,
-                               void* val)
-                               //struct sensor_value* val)
+                               float* fp_val)
 {
     struct lsm9ds1_data *drv_data = dev->driver_data;
-    float* fp_val = (float *)val;
 
     switch (chan) {
         case SENSOR_CHAN_ACCEL_XYZ:
@@ -546,16 +541,16 @@ static int lsm9ds1_channel_get(struct device *dev,
         case SENSOR_CHAN_MAGN_Z:
             memcpy(fp_val, &drv_data->magn_z, sizeof(float));
             break;
-
+            
         default: /* chan == SENSOR_CHAN_DIE_TEMP */
-//            lsm9ds1_convert_temp(val, drv_data->temp);
+            memcpy(fp_val, &drv_data->temperature_c, sizeof(float));
             break;
     }
     
-    return 0;
+    //return 0;
 }
 
-static int lsm9ds1_sample_fetch(struct device *dev, enum sensor_channel chan)
+static void lsm9ds1_sample_fetch(struct device *dev)
 {
     struct lsm9ds1_data *drv_data = dev->driver_data;
 
@@ -585,13 +580,17 @@ static int lsm9ds1_sample_fetch(struct device *dev, enum sensor_channel chan)
     drv_data->magn_z = (float)magCount[2]*mRes; // - magBias[2];
     
     //}
+
+    // Temperature is a 12-bit signed integer
+    int16_t temperature_raw = 0;
+    readTempData(temperature_raw);
+    drv_data->temperature_c = (float)temperature_raw / 256.0f + 25.0f;
+    //temperature_f = temperature_c * 1.8 + 32;
     
-    //s16_t tempData = readTempData();
-    
-    return 0;
+    //return 0;
 }
 
-static const struct sensor_driver_api lsm9ds1_driver_api = {
+static const struct lsm9ds1_api lsm9ds1_driver_api = {
     .sample_fetch = lsm9ds1_sample_fetch,
     .channel_get = lsm9ds1_channel_get,
 };

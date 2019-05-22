@@ -23,7 +23,7 @@ static struct bt_gatt_ccc_cfg mpu_ccc_cfg[BT_GATT_CCC_MAX];
 static volatile bool notifyEnable;
 
 //extern u16_t BT_BUF;
-#define BT_BUF sizeof(float)*9
+#define BT_BUF sizeof(float)*14
 static u8_t mpu_vals[BT_BUF];
 
 static void mpu_ccc_cfg_changed(const struct bt_gatt_attr *attr, u16_t value)

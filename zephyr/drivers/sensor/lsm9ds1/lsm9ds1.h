@@ -11,6 +11,15 @@
 #include <gpio.h>
 #include <misc/util.h>
 #include <zephyr/types.h>
+#include <sensor.h>
+
+typedef void (*lsm9ds1_sample_fetch_t)(struct device *device);
+typedef void (*lsm9ds1_channel_get_t)(struct device *device, enum sensor_channel chan, float *val);
+
+struct lsm9ds1_api {
+    lsm9ds1_sample_fetch_t sample_fetch;
+    lsm9ds1_channel_get_t  channel_get;
+};
 
 struct lsm9ds1_data {
     struct device *i2c;
@@ -27,6 +36,7 @@ struct lsm9ds1_data {
     float magn_y;
     float magn_z;
     
+    float temperature_c;
 };
 
 

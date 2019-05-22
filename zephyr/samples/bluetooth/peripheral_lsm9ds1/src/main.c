@@ -26,17 +26,21 @@
 #include <gpio.h>
 
 #include <stdio.h>
+
+#include <lsm9ds1.h> // drivers/sensor/lsm9ds1
+#include "MadgwickAHRS.h"
+
 #include "services/ble_mpu.h"
 
 
-#define OUTPUT_BUF_SIZE sizeof(float)*9
+#define OUTPUT_BUF_SIZE sizeof(float)*14
 static u8_t sensor_vals[OUTPUT_BUF_SIZE];
 
 static struct device* dev_lsm9ds1;
 
 static volatile bool isConnected = false;
 static struct bt_conn* p_conn = NULL;
-static struct bt_gatt_exchange_params exchange_params;
+//static struct bt_gatt_exchange_params exchange_params;
 
 //BLE Advertise
 static volatile u8_t mfg_data[] = { 0x00, 0x00, 0xaa, 0xbb };
@@ -50,18 +54,18 @@ static const struct bt_data ad[] = {
                   0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12),
 };
 
-static void exchange_func(struct bt_conn *conn, u8_t err,
-                          struct bt_gatt_exchange_params *params)
-{
-    struct bt_conn_info info = {0};
-
-    printk("MTU exchange %s\n", err == 0 ? "successful" : "failed");
-
-    err = bt_conn_get_info(conn, &info);
-    if (info.role == BT_CONN_ROLE_MASTER) {
-
-    }
-}
+//static void exchange_func(struct bt_conn *conn, u8_t err,
+//                          struct bt_gatt_exchange_params *params)
+//{
+//    struct bt_conn_info info = {0};
+//
+//    printk("MTU exchange %s\n", err == 0 ? "successful" : "failed");
+//
+//    err = bt_conn_get_info(conn, &info);
+//    if (info.role == BT_CONN_ROLE_MASTER) {
+//
+//    }
+//}
 
 static void connected(struct bt_conn *conn, u8_t err)
 {
@@ -102,8 +106,8 @@ static void bt_ready(int err)
         settings_load();
     }
     
-    exchange_params.func = exchange_func;
-    err = bt_gatt_exchange_mtu(NULL, &exchange_params);
+//    exchange_params.func = exchange_func;
+//    err = bt_gatt_exchange_mtu(NULL, &exchange_params);
     
     err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
     if (err) {
@@ -115,26 +119,40 @@ static void bt_ready(int err)
 }
 
 // Sensor data
-void update_sensor_data()
+void update_sensor_data(struct device* dev)
 {
-    //12, 24, 36
-    float accel[3], gyro[3], mag[3];
+    struct lsm9ds1_api* dev_api = (struct lsm9ds1_api *)dev->driver_api;
     
-    sensor_sample_fetch(dev_lsm9ds1);
-    sensor_channel_get(dev_lsm9ds1, SENSOR_CHAN_ACCEL_XYZ, (void *)&accel);
-    sensor_channel_get(dev_lsm9ds1, SENSOR_CHAN_GYRO_XYZ, (void *)&gyro);
-    sensor_channel_get(dev_lsm9ds1, SENSOR_CHAN_MAGN_XYZ, (void *)&mag);
+    //12, 24, 36, 40
+    float accel[3], gyro[3], mag[3];
+    float temp;
+    float q[4];
+    
+    dev_api->sample_fetch(dev);
+    
+    dev_api->channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
+    dev_api->channel_get(dev, SENSOR_CHAN_GYRO_XYZ,  gyro);
+    dev_api->channel_get(dev, SENSOR_CHAN_MAGN_XYZ,  mag);
+    dev_api->channel_get(dev, SENSOR_CHAN_DIE_TEMP,  &temp);
+    
+    MadgwickAHRSupdate(deg2rad(gyro[0]), deg2rad(gyro[1]), deg2rad(gyro[2]), accel[0],accel[1],accel[2], -mag[0],mag[1],mag[2]);
+    
+    Quaternion qua = getQuaternion();
+    q[0] = qua.x; q[1] = qua.y; q[2] = qua.z; q[3] = qua.w;
     
     printf("acc:   x: %.6f    y: %.6f    z: %.6f\n", accel[0], accel[1], accel[2]);
     printf("gyr:   x: %.6f    y: %.6f    z: %.6f\n", gyro[0], gyro[1], gyro[2]);
     printf("mag:   x: %.6f    y: %.6f    z: %.6f\n", mag[0], mag[1], mag[2]);
-    
-    //memset(sensor_vals, 0, sizeof(sensor_vals));
-    
+    printf("temp:     %.2f\n", temp);
+    printf("qua:   x: %.6f    y: %.6f    z: %.6f    w: %.6f\n", qua.x, qua.y, qua.z, qua.w);
+
+    memset(sensor_vals, 0, sizeof(sensor_vals));
+
     memcpy(&sensor_vals[sizeof(float)*0], accel, sizeof(accel));
     memcpy(&sensor_vals[sizeof(float)*3], gyro, sizeof(gyro));
     memcpy(&sensor_vals[sizeof(float)*6], mag, sizeof(mag));
-
+    memcpy(&sensor_vals[sizeof(float)*9], &temp, sizeof(temp));
+    memcpy(&sensor_vals[sizeof(float)*10], q, sizeof(q));
 }
 
 
@@ -171,7 +189,7 @@ void main(void)
     while (1) {
         if(isConnected == true){
             if(bmpu_is_notify()){
-                update_sensor_data();
+                update_sensor_data(dev_lsm9ds1);
                 bmpu_notify(p_conn, sensor_vals, OUTPUT_BUF_SIZE);
             }
         }
