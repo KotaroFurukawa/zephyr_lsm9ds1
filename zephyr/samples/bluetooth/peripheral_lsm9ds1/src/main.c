@@ -54,19 +54,6 @@ static const struct bt_data ad[] = {
                   0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12),
 };
 
-//static void exchange_func(struct bt_conn *conn, u8_t err,
-//                          struct bt_gatt_exchange_params *params)
-//{
-//    struct bt_conn_info info = {0};
-//
-//    printk("MTU exchange %s\n", err == 0 ? "successful" : "failed");
-//
-//    err = bt_conn_get_info(conn, &info);
-//    if (info.role == BT_CONN_ROLE_MASTER) {
-//
-//    }
-//}
-
 static void connected(struct bt_conn *conn, u8_t err)
 {
     if (err) {
@@ -105,9 +92,6 @@ static void bt_ready(int err)
     if (IS_ENABLED(CONFIG_SETTINGS)) {
         settings_load();
     }
-    
-//    exchange_params.func = exchange_func;
-//    err = bt_gatt_exchange_mtu(NULL, &exchange_params);
     
     err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
     if (err) {
