@@ -4,7 +4,7 @@ project(NONE)
 
 target_sources(app PRIVATE
   src/main.c
-  src/MadgwickAHRS.c
+  src/quaternionFilter.c
   src/services/ble_mpu.c
 )
 

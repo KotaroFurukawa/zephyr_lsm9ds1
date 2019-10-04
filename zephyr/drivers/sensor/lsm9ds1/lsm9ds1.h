@@ -15,10 +15,13 @@
 
 typedef void (*lsm9ds1_sample_fetch_t)(struct device *device);
 typedef void (*lsm9ds1_channel_get_t)(struct device *device, enum sensor_channel chan, float *val);
+typedef void (*lsm9ds1_performance_t)(struct device *device, bool high);
+
 
 struct lsm9ds1_api {
     lsm9ds1_sample_fetch_t sample_fetch;
     lsm9ds1_channel_get_t  channel_get;
+    lsm9ds1_performance_t  sensor_performance;
 };
 
 struct lsm9ds1_data {

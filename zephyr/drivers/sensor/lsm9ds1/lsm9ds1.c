@@ -350,21 +350,21 @@ static void accelgyrocalLSM9DS1(float * dest1, float * dest2)
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG4, 0x38);
     // configure the gyroscope
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG1_G, Godr << 5 | Gscale << 3 | Gbw);
-    k_sleep(200);
+    k_sleep(K_MSEC(200));
     // enable the three axes of the accelerometer
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG5_XL, 0x38);
     // configure the accelerometer-specify bandwidth selection with Abw
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG6_XL, Aodr << 5 | Ascale << 3 | 0x04 |Abw);
-    k_sleep(200);
+    k_sleep(K_MSEC(200));
     // enable block data update, allow auto-increment during multiple byte read
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG8, 0x44);
     
     // First get gyro bias
     int c = readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9);
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9, c | 0x02);     // Enable gyro FIFO
-    k_sleep(50);                                                       // Wait for change to take effect
+    k_sleep(K_MSEC(50));                                                       // Wait for change to take effect
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_FIFO_CTRL, 0x20 | 0x1F);  // Enable gyro FIFO stream mode and set watermark at 32 samples
-    k_sleep(1000);  // delay 1000 milliseconds to collect FIFO samples
+    k_sleep(K_MSEC(1000));  // delay 1000 milliseconds to collect FIFO samples
     
     samples = (readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_FIFO_SRC) & 0x2F); // Read number of stored samples
     
@@ -390,15 +390,15 @@ static void accelgyrocalLSM9DS1(float * dest1, float * dest2)
     
     c = readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9);
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9, c & ~0x02);   //Disable gyro FIFO
-    k_sleep(50);
+    k_sleep(K_MSEC(50));
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_FIFO_CTRL, 0x00);  // Enable gyro bypass mode
     
     // now get the accelerometer bias
     c = readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9);
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9, c | 0x02);     // Enable accel FIFO
-    k_sleep(50);                                                       // Wait for change to take effect
+    k_sleep(K_MSEC(50));                                                       // Wait for change to take effect
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_FIFO_CTRL, 0x20 | 0x1F);  // Enable accel FIFO stream mode and set watermark at 32 samples
-    k_sleep(1000);  // delay 1000 milliseconds to collect FIFO samples
+    k_sleep(K_MSEC(1000));  // delay 1000 milliseconds to collect FIFO samples
     
     samples = (readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_FIFO_SRC) & 0x2F); // Read number of stored samples
     
@@ -446,7 +446,7 @@ static void magcalLSM9DS1(float * dest1)
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG5_M, 0x40 ); // select block update mode
     
     printk("Mag Calibration: Wave device in a figure eight until done!\n");
-    k_sleep(4000);
+    k_sleep(K_MSEC(4000));
     
     sample_count = 128;
     for(ii = 0; ii < sample_count; ii++) {
@@ -459,7 +459,7 @@ static void magcalLSM9DS1(float * dest1)
             if(mag_temp[jj] > mag_max[jj]) mag_max[jj] = mag_temp[jj];
             if(mag_temp[jj] < mag_min[jj]) mag_min[jj] = mag_temp[jj];
         }
-        k_sleep(105);  // at 10 Hz ODR, new mag data is available every 100 ms
+        k_sleep(K_MSEC(105));  // at 10 Hz ODR, new mag data is available every 100 ms
     }
 
     mag_bias[0]  = (mag_max[0] + mag_min[0])/2;  // get average x mag bias in counts
@@ -479,6 +479,48 @@ static void magcalLSM9DS1(float * dest1)
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_OFFSET_Z_REG_H_M, ((int16_t)mag_bias[2] >> 8) & 0xFF);
     
     printk("Mag Calibration done!\n");
+}
+
+static void initLSM9DS1(void)
+{
+    // enable the 3-axes of the gyroscope
+    writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG4, 0x38);
+    // configure the gyroscope
+    writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG1_G, Godr << 5 | Gscale << 3 | Gbw);
+    k_sleep(K_MSEC(100));
+    // enable the three axes of the accelerometer
+    writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG5_XL, 0x38);
+    // configure the accelerometer-specify bandwidth selection with Abw
+    writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG6_XL, Aodr << 5 | Ascale << 3 | 0x04 |Abw);
+    k_sleep(K_MSEC(100));
+    // enable block data update, allow auto-increment during multiple byte read
+    writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG8, 0x44);
+    // configure the magnetometer-enable temperature compensation of mag data
+    writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG1_M, 0x80 | Mmode << 5 | Modr << 2); // select x,y-axis mode
+    writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG2_M, Mscale << 5 ); // select mag full scale
+    writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG3_M, 0x00 ); // continuous conversion mode
+    writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG4_M, Mmode << 2 ); // select z-axis mode
+    writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG5_M, 0x40 ); // select block update mode
+    
+    printk("LSM9DS1 initialized for active data mode....\n");
+
+    
+}
+
+static void sleepGyro(bool enable)
+{
+
+    uint8_t temp = readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9);
+
+    if (enable){
+       temp |= (1<<6);
+    } else {
+       temp &= ~(1<<6);
+    }
+
+    writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9, temp);
+    k_sleep(K_MSEC(10));
+    //nrf_delay_ms(10);
 }
 
 static void lsm9ds1_channel_get(struct device *dev,
@@ -554,6 +596,8 @@ static void lsm9ds1_sample_fetch(struct device *dev)
 {
     struct lsm9ds1_data *drv_data = dev->driver_data;
 
+    sleepGyro(false);
+    
     //if (readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_STATUS_REG) & 0x01) {  // check if new accel data is ready
     readAccelData(accelCount);  // Read the x/y/z adc values
     
@@ -569,6 +613,7 @@ static void lsm9ds1_sample_fetch(struct device *dev)
     drv_data->gyro_x = (float)gyroCount[0]*gRes - gyroBias[0];  // get actual gyro value, this depends on scale being set
     drv_data->gyro_y = (float)gyroCount[1]*gRes - gyroBias[1];
     drv_data->gyro_z = (float)gyroCount[2]*gRes - gyroBias[2];
+    sleepGyro(true);
     
     //if (readByte(LSM9DS1M_ADDRESS, LSM9DS1M_STATUS_REG_M) & 0x08) {  // check if new mag data is ready
     readMagData(magCount);  // Read the x/y/z adc values
@@ -590,9 +635,47 @@ static void lsm9ds1_sample_fetch(struct device *dev)
     //return 0;
 }
 
+static void lsm9ds1_sensor_performance(struct device *dev, bool high)
+{
+    if(high){
+        // Specify sensor full scale
+         OSR = ADC_4096;       // set pressure amd temperature oversample rate
+         Gscale = GFS_2000DPS; // gyro full scale
+         Godr = GODR_238Hz;    // gyro data sample rate
+         Gbw = GBW_med;        // gyro data bandwidth
+         Ascale = AFS_16G;     // accel full scale
+         Aodr = AODR_238Hz;    // accel data sample rate
+         Abw = ABW_50Hz;       // accel data bandwidth
+         Mscale = MFS_4G;      // mag full scale
+         Modr = MODR_10Hz;     // mag data sample rate
+         Mmode = MMode_HighPerformance;  // magnetometer operation mode
+
+         getAres();
+         getGres();
+         getMres();
+    }else{
+        // Specify sensor full scale
+        OSR = ADC_256; //ADC_4096;      // set pressure amd temperature oversample rate
+        Gscale = GFS_245DPS; //GFS_2000DPS; // gyro full scale
+        Godr = GODR_14_9Hz;  //GODR_238Hz;   // gyro data sample rate
+        Gbw = GBW_low; //GBW_med;       // gyro data bandwidth
+        Ascale = AFS_2G;     //AFS_16G; // accel full scale
+        Aodr = AODR_10Hz; //AODR_238Hz;   // accel data sample rate
+        Abw = ABW_50Hz;      // accel data bandwidth
+        Mscale = MFS_4G;     // mag full scale
+        Modr = MODR_0_625Hz;    //MODR_10Hz;    // mag data sample rate
+        Mmode = MMode_LowPower; //MMode_HighPerformance;  // magnetometer operation mode
+
+        getAres();
+        getGres();
+        getMres();
+    }
+    
+}
 static const struct lsm9ds1_api lsm9ds1_driver_api = {
     .sample_fetch = lsm9ds1_sample_fetch,
     .channel_get = lsm9ds1_channel_get,
+    .sensor_performance = lsm9ds1_sensor_performance,
 };
 
 int lsm9ds1_init(struct device *dev)
@@ -628,31 +711,14 @@ int lsm9ds1_init(struct device *dev)
         accelgyrocalLSM9DS1(gyroBias, accelBias); // Calibrate gyro and accelerometers, load biases in bias registers
         
         magcalLSM9DS1(magBias);
-        k_sleep(500); // add delay to see results before serial spew of data
+        k_sleep(K_MSEC(500)); // add delay to see results before serial spew of data
         
         // Initialize device for active mode read of acclerometer, gyroscope, and temperature
+        initLSM9DS1();
+        k_sleep(K_MSEC(10));
         
-        // enable the 3-axes of the gyroscope
-        writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG4, 0x38);
-        // configure the gyroscope
-        writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG1_G, Godr << 5 | Gscale << 3 | Gbw);
-        k_sleep(100);
-        // enable the three axes of the accelerometer
-        writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG5_XL, 0x38);
-        // configure the accelerometer-specify bandwidth selection with Abw
-        writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG6_XL, Aodr << 5 | Ascale << 3 | 0x04 |Abw);
-        k_sleep(100);
-        // enable block data update, allow auto-increment during multiple byte read
-        writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG8, 0x44);
-        // configure the magnetometer-enable temperature compensation of mag data
-        writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG1_M, 0x80 | Mmode << 5 | Modr << 2); // select x,y-axis mode
-        writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG2_M, Mscale << 5 ); // select mag full scale
-        writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG3_M, 0x00 ); // continuous conversion mode
-        writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG4_M, Mmode << 2 ); // select z-axis mode
-        writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG5_M, 0x40 ); // select block update mode
-        
-        printk("LSM9DS1 initialized for active data mode....\n");
-        
+        //Sleeping gyro
+        sleepGyro(true);
         
     } else {
         printf("Could not connect to LSM9DS1: 0x%x\n", c);

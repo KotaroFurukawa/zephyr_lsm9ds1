@@ -36,4 +36,11 @@ config LSM9DS1_I2C_MASTER_DEV_NAME
 	  Specify the device name of the I2C master device to which LSM9DS1 is
 	  connected.
 
+config LSM9DS1_GYRO_PERFORMANCE
+	bool "LSM9DS1 Gyro performance(High / Low)"
+	default false
+	help
+	  GYRO sensor performance(High or Low).
+	  default Low.
+
 endif # LSM9DS1

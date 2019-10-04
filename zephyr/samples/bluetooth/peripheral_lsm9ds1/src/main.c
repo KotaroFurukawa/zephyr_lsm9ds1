@@ -10,7 +10,7 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <misc/printk.h>
+//#include <misc/printk.h>
 #include <misc/byteorder.h>
 #include <zephyr.h>
 
@@ -24,51 +24,134 @@
 
 #include <sensor.h>
 #include <gpio.h>
+#include <dk_buttons_and_leds.h>
 
-#include <stdio.h>
+//#include <stdio.h>
 
 #include <lsm9ds1.h> // drivers/sensor/lsm9ds1
-#include "MadgwickAHRS.h"
-
+#include "quaternionFilter.h"
 #include "services/ble_mpu.h"
 
+//IMU Quaternion value.
+float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion
+float deltat;                            // integration interval for both filter schemes
+uint32_t lastUpdate;
+uint32_t Now;
+float pitch, yaw, roll;
+float eInt[3] = {0.0f, 0.0f, 0.0f};       // vector to hold integral error for Mahony method
 
-#define OUTPUT_BUF_SIZE sizeof(float)*14
-static u8_t sensor_vals[OUTPUT_BUF_SIZE];
+#define OUTPUT_BUF_SIZE BT_BUF
+u8_t mpu_vals[OUTPUT_BUF_SIZE];
 
-static struct device* dev_lsm9ds1;
+//sensor
+static struct device*      dev_lsm9ds1;
+static struct lsm9ds1_api* dev_api;
 
-static volatile bool isConnected = false;
+//bt
 static struct bt_conn* p_conn = NULL;
-//static struct bt_gatt_exchange_params exchange_params;
 
 //BLE Advertise
-static volatile u8_t mfg_data[] = { 0x00, 0x00, 0xaa, 0xbb };
-
 static const struct bt_data ad[] = {
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-    BT_DATA(BT_DATA_MANUFACTURER_DATA, mfg_data, 4),
-    
-    BT_DATA_BYTES(BT_DATA_UUID128_ALL,
-                  0xf0, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12,
-                  0x78, 0x56, 0x34, 0x12, 0x78, 0x56, 0x34, 0x12),
+    BT_DATA_BYTES(BT_DATA_UUID128_ALL, SERVICE_UUID),
 };
+
+/* Interval in milliseconds between each time status LEDs are updated. */
+#define LEDS_UPDATE_INTERVAL            500
+#define BUTTONS_UPDATE_INTERVAL         500
+
+// Timer
+static volatile uint32_t overflows = 0;
+
+/* Structures for work */
+static struct k_delayed_work leds_update_work;
+static struct k_delayed_work buttons_update_work;
+
+static u32_t micros(void)
+{
+
+   u64_t ticks = (u64_t)((u64_t)overflows << (u64_t)24) | (u64_t)k_uptime_get();
+
+   return (ticks * 1000000) / 32768;
+}
+
+// Sensor data
+static void sensor_update(void)
+{
+
+    float accel[3], gyro[3], mag[3];
+
+    dev_api->sample_fetch(dev_lsm9ds1);
+    
+    dev_api->channel_get(dev_lsm9ds1, SENSOR_CHAN_ACCEL_XYZ, accel);
+    dev_api->channel_get(dev_lsm9ds1, SENSOR_CHAN_GYRO_XYZ,  gyro);
+    dev_api->channel_get(dev_lsm9ds1, SENSOR_CHAN_MAGN_XYZ,  mag);
+//    dev_api->channel_get(dev, SENSOR_CHAN_DIE_TEMP,  &temp);
+    
+    Now = micros();
+    deltat = ((Now - lastUpdate)/1000000.0f); // set integration time by time elapsed since last filter update
+    lastUpdate = Now;
+
+    MadgwickQuaternionUpdate( accel[0], accel[1], accel[2],
+                              gyro[0]*PI/180.0f, gyro[1]*PI/180.0f, gyro[2]*PI/180.0f,
+                             -mag[0], mag[1], mag[2] );
+
+//    printf("acc:   x: %.6f    y: %.6f    z: %.6f\n", accel[0], accel[1], accel[2]);
+//    printf("gyr:   x: %.6f    y: %.6f    z: %.6f\n", gyro[0], gyro[1], gyro[2]);
+//    printf("mag:   x: %.6f    y: %.6f    z: %.6f\n", mag[0], mag[1], mag[2]);
+//    printf("temp:     %.2f\n", temp);
+//    printf("qua:   x: %.6f    y: %.6f    z: %.6f    w: %.6f\n", qua.x, qua.y, qua.z, qua.w);
+
+
+    memcpy(&mpu_vals[sizeof(float)*0], accel, sizeof(accel));
+    memcpy(&mpu_vals[sizeof(float)*3], gyro, sizeof(gyro));
+    memcpy(&mpu_vals[sizeof(float)*6], mag, sizeof(mag));
+//    memcpy(&sensor_vals[sizeof(float)*9], &temp, sizeof(temp));
+    memcpy(&mpu_vals[sizeof(float)*9], q, sizeof(q));
+
+}
+
+/**@brief Update BUTTONs state. */
+static void buttons_update(struct k_work *work)
+{
+
+    bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
+
+}
+
+/**@brief Update LEDs state. */
+static void leds_update(struct k_work *work)
+{
+
+    // flash  LED
+    while(true){
+
+      dk_set_led(DK_LED1, 1);
+      k_sleep(K_MSEC(25));
+      dk_set_led(DK_LED1, 0);
+
+      k_sleep(K_MSEC(5000));
+
+    }
+
+}
+
 
 static void connected(struct bt_conn *conn, u8_t err)
 {
     if (err) {
-        printk("Connection failed (err %u)\n", err);
+        //printk("Connection failed (err %u)\n", err);
     } else {
-        printk("Connected\n");
-        isConnected = true;
+        //printk("Connected\n");
+        
         p_conn = conn;
     }
 }
 
 static void disconnected(struct bt_conn *conn, u8_t reason)
 {
-    printk("Disconnected (reason %u)\n", reason);
-    isConnected = false;
+    //printk("Disconnected (reason %u)\n", reason);
+    
     p_conn = NULL;
 }
 
@@ -80,11 +163,11 @@ static struct bt_conn_cb conn_callbacks = {
 static void bt_ready(int err)
 {
     if (err) {
-        printk("Bluetooth init failed (err %d)\n", err);
+        //printk("Bluetooth init failed (err %d)\n", err);
         return;
     }
     
-    printk("Bluetooth initialized\n");
+    //printk("Bluetooth initialized\n");
     
     //ble service init.
     bmpu_init();
@@ -95,89 +178,112 @@ static void bt_ready(int err)
     
     err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
     if (err) {
-        printk("Advertising failed to start (err %d)\n", err);
+        //printk("Advertising failed to start (err %d)\n", err);
         return;
     }
     
-    printk("Advertising successfully started\n");
-}
-
-// Sensor data
-void update_sensor_data(struct device* dev)
-{
-    struct lsm9ds1_api* dev_api = (struct lsm9ds1_api *)dev->driver_api;
-    
-    //12, 24, 36, 40
-    float accel[3], gyro[3], mag[3];
-    float temp;
-    float q[4];
-    
-    dev_api->sample_fetch(dev);
-    
-    dev_api->channel_get(dev, SENSOR_CHAN_ACCEL_XYZ, accel);
-    dev_api->channel_get(dev, SENSOR_CHAN_GYRO_XYZ,  gyro);
-    dev_api->channel_get(dev, SENSOR_CHAN_MAGN_XYZ,  mag);
-    dev_api->channel_get(dev, SENSOR_CHAN_DIE_TEMP,  &temp);
-    
-    MadgwickAHRSupdate(deg2rad(gyro[0]), deg2rad(gyro[1]), deg2rad(gyro[2]), accel[0],accel[1],accel[2], -mag[0],mag[1],mag[2]);
-    
-    Quaternion qua = getQuaternion();
-    q[0] = qua.x; q[1] = qua.y; q[2] = qua.z; q[3] = qua.w;
-    
-    printf("acc:   x: %.6f    y: %.6f    z: %.6f\n", accel[0], accel[1], accel[2]);
-    printf("gyr:   x: %.6f    y: %.6f    z: %.6f\n", gyro[0], gyro[1], gyro[2]);
-    printf("mag:   x: %.6f    y: %.6f    z: %.6f\n", mag[0], mag[1], mag[2]);
-    printf("temp:     %.2f\n", temp);
-    printf("qua:   x: %.6f    y: %.6f    z: %.6f    w: %.6f\n", qua.x, qua.y, qua.z, qua.w);
-
-    memset(sensor_vals, 0, sizeof(sensor_vals));
-
-    memcpy(&sensor_vals[sizeof(float)*0], accel, sizeof(accel));
-    memcpy(&sensor_vals[sizeof(float)*3], gyro, sizeof(gyro));
-    memcpy(&sensor_vals[sizeof(float)*6], mag, sizeof(mag));
-    memcpy(&sensor_vals[sizeof(float)*9], &temp, sizeof(temp));
-    memcpy(&sensor_vals[sizeof(float)*10], q, sizeof(q));
+    //printk("Advertising successfully started\n");
 }
 
 
-void main(void)
+
+static void work_init(void)
 {
-    /* Set LED pin as output */
-    struct device* port0 = device_get_binding("GPIO_0");
-    gpio_pin_configure(port0, 17, GPIO_DIR_OUT);
-    
-    // flash  LED
-    gpio_pin_write(port0, 17, 0);
-    k_sleep(K_MSEC(500));
-    gpio_pin_write(port0, 17, 1);
-    k_sleep(K_MSEC(500));
-    
-    // sensor
-    dev_lsm9ds1 = device_get_binding("LSM9DS1");
-    printk("dev %p name %s\n", dev_lsm9ds1, dev_lsm9ds1->config->name);
-    
-    memset(sensor_vals, 0, sizeof(sensor_vals));
-    
-    k_sleep(K_MSEC(500));
-    
+
+    k_delayed_work_init(&leds_update_work, leds_update);
+    k_delayed_work_init(&buttons_update_work, buttons_update);
+
+    k_delayed_work_submit(&leds_update_work, LEDS_UPDATE_INTERVAL);
+    k_delayed_work_submit(&buttons_update_work, BUTTONS_UPDATE_INTERVAL);
+
+}
+
+static void bt_init(void)
+{
     // set up BLE
     int err;
     err = bt_enable(bt_ready);
     if (err) {
-        printk("Bluetooth init failed (err %d)\n", err);
+        //printk("Bluetooth init failed (err %d)\n", err);
         return;
     }
     
     bt_conn_cb_register(&conn_callbacks);
+
+}
+
+static void sensor_init(void)
+{
+
+    //printk("dev %p name %s\n", dev_lsm9ds1, dev_lsm9ds1->config->name);
+    dev_lsm9ds1 = device_get_binding("LSM9DS1");
+    memset(mpu_vals, 0, sizeof(mpu_vals));
+
+    dev_api = (struct lsm9ds1_api *)dev_lsm9ds1->driver_api;
+    dev_api->sensor_performance(dev_lsm9ds1, true);
+
+
+}
+
+static void button_handler(u32_t button_state, u32_t has_changed)
+{
     
-    while (1) {
-        if(isConnected == true){
-            if(bmpu_is_notify()){
-                update_sensor_data(dev_lsm9ds1);
-                bmpu_notify(p_conn, sensor_vals, OUTPUT_BUF_SIZE);
-            }
+    if (has_changed & DK_BTN1_MSK) {
+        k_delayed_work_submit(&buttons_update_work, BUTTONS_UPDATE_INTERVAL);
+    }
+}
+
+/**@brief Initializes buttons and LEDs, using the DK buttons and LEDs
+ * library.
+ */
+static void buttons_leds_init(void)
+{
+    int err;
+    
+    err = dk_buttons_init(button_handler);
+    if (err) {
+        //printk("Could not initialize buttons, err code: %d\n", err);
+    }
+    
+    err = dk_leds_init();
+    if (err) {
+        //printk("Could not initialize leds, err code: %d\n", err);
+    }
+    
+    dk_set_led(DK_LED1, 1);
+    k_sleep(200);
+    dk_set_led(DK_LED1, 0);
+
+    err = dk_set_leds_state(0x00, DK_ALL_LEDS_MSK);
+    if (err) {
+       // printk("Could not set leds state, err code: %d\n", err);
+    }
+}
+
+void main(void)
+{
+
+    buttons_leds_init();
+    sensor_init();
+
+    bt_init();
+    work_init();
+    
+    while ( true ) {
+
+      if(p_conn != NULL){
+        if(bmpu_is_notify()){
+
+          sensor_update();
+          bmpu_notify(p_conn, mpu_vals, OUTPUT_BUF_SIZE);
+          k_sleep(K_MSEC(100));
+
         }
-        k_sleep(K_MSEC(100));
+      }
+
+      /* Put CPU to idle to save power */
+     
+      k_cpu_idle();
     }
     
 }
