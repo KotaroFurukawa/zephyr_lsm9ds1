@@ -16,12 +16,13 @@
 typedef void (*lsm9ds1_sample_fetch_t)(struct device *device);
 typedef void (*lsm9ds1_channel_get_t)(struct device *device, enum sensor_channel chan, float *val);
 typedef void (*lsm9ds1_performance_t)(struct device *device, bool high);
-
+typedef bool (*lsm9ds1_initDone_t)(struct device *device);
 
 struct lsm9ds1_api {
     lsm9ds1_sample_fetch_t sample_fetch;
     lsm9ds1_channel_get_t  channel_get;
     lsm9ds1_performance_t  sensor_performance;
+    lsm9ds1_initDone_t     initDone;
 };
 
 struct lsm9ds1_data {
@@ -40,6 +41,8 @@ struct lsm9ds1_data {
     float magn_z;
     
     float temperature_c;
+
+    bool  initDone;
 };
 
 

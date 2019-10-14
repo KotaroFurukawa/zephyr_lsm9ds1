@@ -214,13 +214,14 @@ static void writeByte(uint8_t address, uint8_t subAddress, uint8_t data)
     i2c_reg_write_byte(lsm9ds1_driver.i2c, address, subAddress, data);
 }
 
-static uint8_t readByte(uint8_t address, uint8_t subAddress)
+static uint8_t readByte(u8_t address, u8_t subAddress)
 {
-    u8_t data = 0;
+    u8_t data;
+
     if(i2c_reg_read_byte(lsm9ds1_driver.i2c, address, subAddress, &data) < 0){
         return -EIO;
     }
-    
+
     return data;
 }
 
@@ -487,6 +488,12 @@ static void initLSM9DS1(void)
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG4, 0x38);
     // configure the gyroscope
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG1_G, Godr << 5 | Gscale << 3 | Gbw);
+    
+    #ifdef CONFIG_GYRO_LOW_POWER
+        // low power gyro add
+        writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG3_G, (1<<7));
+    #endif
+    
     k_sleep(K_MSEC(100));
     // enable the three axes of the accelerometer
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG5_XL, 0x38);
@@ -498,7 +505,13 @@ static void initLSM9DS1(void)
     // configure the magnetometer-enable temperature compensation of mag data
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG1_M, 0x80 | Mmode << 5 | Modr << 2); // select x,y-axis mode
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG2_M, Mscale << 5 ); // select mag full scale
+
+#ifndef CONFIG_GYRO_LOW_POWER
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG3_M, 0x00 ); // continuous conversion mode
+#else
+    writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG3_M,  (1<<5) | (Mmode | 0x03) ); // continuous conversion mode GYRO LOW POWER
+#endif
+    
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG4_M, Mmode << 2 ); // select z-axis mode
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG5_M, 0x40 ); // select block update mode
     
@@ -637,7 +650,7 @@ static void lsm9ds1_sample_fetch(struct device *dev)
 
 static void lsm9ds1_sensor_performance(struct device *dev, bool high)
 {
-    if(high){
+    if(high == true){
         // Specify sensor full scale
          OSR = ADC_4096;       // set pressure amd temperature oversample rate
          Gscale = GFS_2000DPS; // gyro full scale
@@ -672,24 +685,26 @@ static void lsm9ds1_sensor_performance(struct device *dev, bool high)
     }
     
 }
-static const struct lsm9ds1_api lsm9ds1_driver_api = {
-    .sample_fetch = lsm9ds1_sample_fetch,
-    .channel_get = lsm9ds1_channel_get,
-    .sensor_performance = lsm9ds1_sensor_performance,
-};
 
-int lsm9ds1_init(struct device *dev)
+static bool initDone(struct device *dev)
 {
-
+    u32_t i2c_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD) | I2C_MODE_MASTER;
     struct lsm9ds1_data* drv_data = dev->driver_data;
+    drv_data->initDone = false;
+   
     drv_data->i2c = device_get_binding(CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
     
+
     if (drv_data->i2c == NULL) {
         printf("Failed to get pointer to %s device\n", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
         //LOG_ERR("Failed to get pointer to %s device", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
         return -EINVAL;
-    }
+    }else{
     
+        i2c_configure(drv_data->i2c, i2c_cfg);
+        
+    }        
+
     // Read the WHO_AM_I registers, this is a good test of communication
     printk("LSM9DS1 9-axis motion sensor...\n");
 
@@ -723,7 +738,37 @@ int lsm9ds1_init(struct device *dev)
     } else {
         printf("Could not connect to LSM9DS1: 0x%x\n", c);
     }
+    drv_data->initDone = true;
     
+    return drv_data->initDone;
+}
+
+
+static const struct lsm9ds1_api lsm9ds1_driver_api = {
+    .sample_fetch = lsm9ds1_sample_fetch,
+    .channel_get = lsm9ds1_channel_get,
+    .sensor_performance = lsm9ds1_sensor_performance,
+    .initDone           = initDone,
+};
+
+int lsm9ds1_init(struct device *dev)
+{
+//    u32_t i2c_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD) | I2C_MODE_MASTER;
+//    struct lsm9ds1_data* drv_data = dev->driver_data;
+//
+//    drv_data->i2c = device_get_binding(CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
+//
+//
+//    if (drv_data->i2c == NULL) {
+//        printf("Failed to get pointer to %s device\n", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
+//        //LOG_ERR("Failed to get pointer to %s device", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
+//        return -EINVAL;
+//    }else{
+//
+//        i2c_configure(drv_data->i2c, i2c_cfg);
+//
+//    }
+
     return 0;
 }
 

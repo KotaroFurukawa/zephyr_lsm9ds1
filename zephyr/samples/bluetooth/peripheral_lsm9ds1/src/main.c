@@ -24,13 +24,57 @@
 
 #include <sensor.h>
 #include <gpio.h>
-#include <dk_buttons_and_leds.h>
+//#include <dk_buttons_and_leds.h>
 
 //#include <stdio.h>
 
 #include <lsm9ds1.h> // drivers/sensor/lsm9ds1
 #include "quaternionFilter.h"
 #include "services/ble_mpu.h"
+
+/* change this to use another GPIO port */
+#ifndef SW0_GPIO_CONTROLLER
+#ifdef SW0_GPIO_NAME
+#define SW0_GPIO_CONTROLLER SW0_GPIO_NAME
+#else
+#error SW0_GPIO_NAME or SW0_GPIO_CONTROLLER needs to be set in board.h
+#endif
+#endif
+#define PORT    SW0_GPIO_CONTROLLER
+
+/* change this to use another GPIO pin */
+#ifdef SW0_GPIO_PIN
+#define PIN     SW0_GPIO_PIN
+#else
+#error SW0_GPIO_PIN needs to be set in board.h
+#endif
+
+/* change to use another GPIO pin interrupt config */
+#ifdef SW0_GPIO_FLAGS
+#define EDGE    (SW0_GPIO_FLAGS | GPIO_INT_EDGE)
+#else
+/*
+ * If SW0_GPIO_FLAGS not defined used default EDGE value.
+ * Change this to use a different interrupt trigger
+ */
+#define EDGE    (GPIO_INT_EDGE | GPIO_INT_ACTIVE_LOW)
+#endif
+
+/* change this to enable pull-up/pull-down */
+#ifndef SW0_GPIO_FLAGS
+#ifdef SW0_GPIO_PIN_PUD
+#define SW0_GPIO_FLAGS SW0_GPIO_PIN_PUD
+#else
+#define SW0_GPIO_FLAGS 0
+#endif
+#endif
+#define PULL_UP SW0_GPIO_FLAGS
+
+/* Sleep time */
+#define SLEEP_TIME    500
+
+/* Button */
+struct device *button_gpio;
 
 //IMU Quaternion value.
 float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion
@@ -40,15 +84,15 @@ uint32_t Now;
 float pitch, yaw, roll;
 float eInt[3] = {0.0f, 0.0f, 0.0f};       // vector to hold integral error for Mahony method
 
-#define OUTPUT_BUF_SIZE BT_BUF
-u8_t mpu_vals[OUTPUT_BUF_SIZE];
+static volatile uint32_t overflows = 0;
 
-//sensor
-static struct device*      dev_lsm9ds1;
-static struct lsm9ds1_api* dev_api;
+static struct device* dev_lsm9ds1;
 
 //bt
 static struct bt_conn* p_conn = NULL;
+
+#define OUTPUT_BUF_SIZE BT_BUF
+u8_t mpu_vals[OUTPUT_BUF_SIZE];
 
 //BLE Advertise
 static const struct bt_data ad[] = {
@@ -56,16 +100,68 @@ static const struct bt_data ad[] = {
     BT_DATA_BYTES(BT_DATA_UUID128_ALL, SERVICE_UUID),
 };
 
+
 /* Interval in milliseconds between each time status LEDs are updated. */
 #define LEDS_UPDATE_INTERVAL            500
 #define BUTTONS_UPDATE_INTERVAL         500
 
-// Timer
-static volatile uint32_t overflows = 0;
-
 /* Structures for work */
 static struct k_delayed_work leds_update_work;
 static struct k_delayed_work buttons_update_work;
+
+/* Sensor update timer */
+struct k_timer sensor_timer;
+#define TIEMR_INTERVAL_MSEC 100 //ms
+
+
+//static K_SEM_DEFINE(my_sem, 0, 2);
+
+
+/* LED */
+#define LED_PORT LED0_GPIO_CONTROLLER
+#define LED    LED0_GPIO_PIN
+
+static struct device *led_dev;
+
+/**@brief Update LEDs state. */
+
+static void led_one_shot(u8_t ms)
+{
+      gpio_pin_write(led_dev, LED, 1);
+      k_sleep(K_MSEC(ms));
+      gpio_pin_write(led_dev, LED, 0);
+
+}
+
+static void leds_update(struct k_work *work)
+{
+
+    // flash  LED
+    while(true){
+      led_one_shot(25);
+      k_sleep(K_MSEC(5000));
+    }
+
+}
+
+void button_pressed(struct device *gpiob, struct gpio_callback *cb,
+            u32_t pins)
+{
+//    printk("Button pressed at %d\n", k_cycle_get_32());
+//    NVIC_SystemReset();
+}
+
+static struct gpio_callback button_cb;
+
+static void buttons_update(struct k_work *work)
+{
+
+    while(true){
+        u32_t val = 0U;
+        gpio_pin_read(button_gpio, PIN, &val);
+    }
+
+}
 
 static u32_t micros(void)
 {
@@ -80,7 +176,10 @@ static void sensor_update(void)
 {
 
     float accel[3], gyro[3], mag[3];
+    
+    memset(mpu_vals, 0, sizeof(mpu_vals));
 
+    struct lsm9ds1_api* dev_api = (struct lsm9ds1_api *)dev_lsm9ds1->driver_api;
     dev_api->sample_fetch(dev_lsm9ds1);
     
     dev_api->channel_get(dev_lsm9ds1, SENSOR_CHAN_ACCEL_XYZ, accel);
@@ -111,46 +210,29 @@ static void sensor_update(void)
 
 }
 
-/**@brief Update BUTTONs state. */
-static void buttons_update(struct k_work *work)
+void sensor_timer_interlop(struct k_timer *timer_id)
 {
+      if(p_conn != NULL){
+        if(bmpu_is_notify()){
 
-    bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
-
+          sensor_update();
+          bmpu_notify(p_conn, mpu_vals, OUTPUT_BUF_SIZE);
+        }
+      }
+      //k_sleep(K_MSEC(100));
 }
-
-/**@brief Update LEDs state. */
-static void leds_update(struct k_work *work)
-{
-
-    // flash  LED
-    while(true){
-
-      dk_set_led(DK_LED1, 1);
-      k_sleep(K_MSEC(25));
-      dk_set_led(DK_LED1, 0);
-
-      k_sleep(K_MSEC(5000));
-
-    }
-
-}
-
 
 static void connected(struct bt_conn *conn, u8_t err)
 {
-    if (err) {
-        //printk("Connection failed (err %u)\n", err);
-    } else {
-        //printk("Connected\n");
-        
+    if (!err) {
+//        printk("Connected\n");
         p_conn = conn;
     }
 }
 
 static void disconnected(struct bt_conn *conn, u8_t reason)
 {
-    //printk("Disconnected (reason %u)\n", reason);
+//    printk("Disconnected (reason %u)\n", reason);
     
     p_conn = NULL;
 }
@@ -163,11 +245,11 @@ static struct bt_conn_cb conn_callbacks = {
 static void bt_ready(int err)
 {
     if (err) {
-        //printk("Bluetooth init failed (err %d)\n", err);
+//        printk("Bluetooth init failed (err %d)\n", err);
         return;
     }
     
-    //printk("Bluetooth initialized\n");
+//    printk("Bluetooth initialized\n");
     
     //ble service init.
     bmpu_init();
@@ -178,14 +260,18 @@ static void bt_ready(int err)
     
     err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
     if (err) {
-        //printk("Advertising failed to start (err %d)\n", err);
+//        printk("Advertising failed to start (err %d)\n", err);
         return;
     }
     
-    //printk("Advertising successfully started\n");
+//    printk("Advertising successfully started\n");
+
+    /* Give two semaphores to signal both the led_blink_thread, and
+     * and the ble_write_thread that ble initialized successfully
+     */
+//    k_sem_give(&my_sem);
+//    k_sem_give(&my_sem);
 }
-
-
 
 static void work_init(void)
 {
@@ -195,7 +281,6 @@ static void work_init(void)
 
     k_delayed_work_submit(&leds_update_work, LEDS_UPDATE_INTERVAL);
     k_delayed_work_submit(&buttons_update_work, BUTTONS_UPDATE_INTERVAL);
-
 }
 
 static void bt_init(void)
@@ -204,7 +289,7 @@ static void bt_init(void)
     int err;
     err = bt_enable(bt_ready);
     if (err) {
-        //printk("Bluetooth init failed (err %d)\n", err);
+//        printk("Bluetooth init failed (err %d)\n", err);
         return;
     }
     
@@ -214,59 +299,59 @@ static void bt_init(void)
 
 static void sensor_init(void)
 {
-
-    //printk("dev %p name %s\n", dev_lsm9ds1, dev_lsm9ds1->config->name);
+//    printk("Sensor init...\n");
     dev_lsm9ds1 = device_get_binding("LSM9DS1");
-    memset(mpu_vals, 0, sizeof(mpu_vals));
 
-    dev_api = (struct lsm9ds1_api *)dev_lsm9ds1->driver_api;
-    dev_api->sensor_performance(dev_lsm9ds1, true);
+    struct lsm9ds1_api* dev_api = (struct lsm9ds1_api *)dev_lsm9ds1->driver_api;
+    dev_api->initDone(dev_lsm9ds1);
+    dev_api->sensor_performance(dev_lsm9ds1, false);
 
-
-}
-
-static void button_handler(u32_t button_state, u32_t has_changed)
-{
-    
-    if (has_changed & DK_BTN1_MSK) {
-        k_delayed_work_submit(&buttons_update_work, BUTTONS_UPDATE_INTERVAL);
-    }
 }
 
 /**@brief Initializes buttons and LEDs, using the DK buttons and LEDs
  * library.
  */
-static void buttons_leds_init(void)
+static void leds_init(void)
 {
-    int err;
-    
-    err = dk_buttons_init(button_handler);
-    if (err) {
-        //printk("Could not initialize buttons, err code: %d\n", err);
-    }
-    
-    err = dk_leds_init();
-    if (err) {
-        //printk("Could not initialize leds, err code: %d\n", err);
-    }
-    
-    dk_set_led(DK_LED1, 1);
-    k_sleep(200);
-    dk_set_led(DK_LED1, 0);
+//    int err;
 
-    err = dk_set_leds_state(0x00, DK_ALL_LEDS_MSK);
-    if (err) {
-       // printk("Could not set leds state, err code: %d\n", err);
+    led_dev = device_get_binding(LED_PORT);
+    /* Set LED pin as output */
+    gpio_pin_configure(led_dev, LED, GPIO_DIR_OUT);
+    
+    led_one_shot(200);
+
+}
+
+static void button_init(void)
+{
+//    printk("Press the user defined button on the board\n");
+    button_gpio = device_get_binding(PORT);
+    if (!button_gpio) {
+//        printk("error\n");
+        return;
     }
+
+    gpio_pin_configure(button_gpio, PIN,
+               GPIO_DIR_IN | GPIO_INT |  PULL_UP | EDGE);
+
+    gpio_init_callback(&button_cb, button_pressed, BIT(PIN));
+
+    gpio_add_callback(button_gpio, &button_cb);
+    gpio_pin_enable_callback(button_gpio, PIN);
 }
 
 void main(void)
 {
 
-    buttons_leds_init();
-    sensor_init();
+//    k_sleep(K_SECONDS(10));
 
+    button_init();
+    leds_init();
+    sensor_init();
+    led_one_shot(200);
     bt_init();
+//    k_sem_take(&my_sem, K_MSEC(100));
     work_init();
     
     while ( true ) {
@@ -276,14 +361,13 @@ void main(void)
 
           sensor_update();
           bmpu_notify(p_conn, mpu_vals, OUTPUT_BUF_SIZE);
-          k_sleep(K_MSEC(100));
-
         }
       }
+      k_sleep(K_MSEC(100));
 
       /* Put CPU to idle to save power */
-     
-      k_cpu_idle();
+
+      //k_cpu_idle();
     }
     
 }

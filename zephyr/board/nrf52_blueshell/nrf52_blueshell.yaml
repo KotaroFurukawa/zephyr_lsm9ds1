@@ -1,0 +1,10 @@
+identifier: nrf52_blueshell
+name: BLUESHELL
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+ram: 64
+flash: 512
