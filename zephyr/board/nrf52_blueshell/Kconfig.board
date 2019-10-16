@@ -8,3 +8,27 @@
 config BOARD_NRF52_BLUESHELL
 	bool "nRF52 BLUESHELL"
 	depends on SOC_NRF52832_QFAA
+
+if BOARD_NRF52_BLUESHELL
+
+config BOARD_NRF52_BLUESHELL_RESET
+	bool "Enable GPIO reset line"
+        default y
+	help
+	 nRF52832 reset pin
+
+if BOARD_NRF52_BLUESHELL_RESET
+
+comment "nRF52 pins"
+
+config BOARD_NRF52_BLUESHELL_RESET_P0_21
+	bool "P0.21"
+        default y
+	help
+	 Pin P0.21 on nRF52832.
+
+
+endif # BOARD_NRF52_BLUESHELL_RESET
+
+
+endif # BOARD_NRF52_BLUESHELL

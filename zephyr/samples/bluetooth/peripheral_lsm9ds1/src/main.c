@@ -363,7 +363,7 @@ void main(void)
           bmpu_notify(p_conn, mpu_vals, OUTPUT_BUF_SIZE);
         }
       }
-      k_sleep(K_MSEC(100));
+      k_sleep(K_MSEC(50));
 
       /* Put CPU to idle to save power */
 

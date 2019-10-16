@@ -93,21 +93,11 @@
 #define LSM9DS1M_INT_THS_L_M        0x32
 #define LSM9DS1M_INT_THS_H_M        0x33
 
-// Using the LSM9DS1+MS5611 Teensy 3.1 Add-On shield, ADO is set to 1
-// Seven-bit device address of accel/gyro is 110101 for ADO = 0 and 110101 for ADO = 1
-//#define ADO 1
-//#if ADO
-#define LSM9DS1XG_ADDRESS 0x6B   //  Device address when ADO = 1
+
+#define LSM9DS1XG_ADDRESS 0x6B   //  Device address
 #define LSM9DS1M_ADDRESS  0x1E   //  Address of magnetometer
 
-//static struct device* p_device;
 struct lsm9ds1_data lsm9ds1_driver;
-
-//#else
-//#define LSM9DS1XG_ADDRESS 0x6A   //  Device address when ADO = 0
-//#define LSM9DS1M_ADDRESS  0x1D   //  Address of magnetometer
-//#endif
-
 
 // Set initial input parameters
 enum Ascale {  // set of allowable accel full scale settings
@@ -349,14 +339,18 @@ static void accelgyrocalLSM9DS1(float * dest1, float * dest2)
     
     // enable the 3-axes of the gyroscope
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG4, 0x38);
+
     // configure the gyroscope
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG1_G, Godr << 5 | Gscale << 3 | Gbw);
     k_sleep(K_MSEC(200));
+
     // enable the three axes of the accelerometer
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG5_XL, 0x38);
+
     // configure the accelerometer-specify bandwidth selection with Abw
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG6_XL, Aodr << 5 | Ascale << 3 | 0x04 |Abw);
     k_sleep(K_MSEC(200));
+
     // enable block data update, allow auto-increment during multiple byte read
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG8, 0x44);
     
@@ -446,7 +440,7 @@ static void magcalLSM9DS1(float * dest1)
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG4_M, Mmode << 2 ); // select z-axis mode
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG5_M, 0x40 ); // select block update mode
     
-    printk("Mag Calibration: Wave device in a figure eight until done!\n");
+//    printk("Mag Calibration: Wave device in a figure eight until done!\n");
     k_sleep(K_MSEC(4000));
     
     sample_count = 128;
@@ -479,7 +473,7 @@ static void magcalLSM9DS1(float * dest1)
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_OFFSET_Z_REG_L_M, (int16_t) mag_bias[2] & 0xFF);
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_OFFSET_Z_REG_H_M, ((int16_t)mag_bias[2] >> 8) & 0xFF);
     
-    printk("Mag Calibration done!\n");
+//    printk("Mag Calibration done!\n");
 }
 
 static void initLSM9DS1(void)
@@ -489,24 +483,28 @@ static void initLSM9DS1(void)
     // configure the gyroscope
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG1_G, Godr << 5 | Gscale << 3 | Gbw);
     
-    #ifdef CONFIG_GYRO_LOW_POWER
+    #ifdef CONFIG_LSM9DS1_GYRO_LOW_POWER
         // low power gyro add
         writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG3_G, (1<<7));
     #endif
     
     k_sleep(K_MSEC(100));
+
     // enable the three axes of the accelerometer
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG5_XL, 0x38);
+
     // configure the accelerometer-specify bandwidth selection with Abw
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG6_XL, Aodr << 5 | Ascale << 3 | 0x04 |Abw);
     k_sleep(K_MSEC(100));
+
     // enable block data update, allow auto-increment during multiple byte read
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG8, 0x44);
+
     // configure the magnetometer-enable temperature compensation of mag data
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG1_M, 0x80 | Mmode << 5 | Modr << 2); // select x,y-axis mode
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG2_M, Mscale << 5 ); // select mag full scale
 
-#ifndef CONFIG_GYRO_LOW_POWER
+#ifndef CONFIG_LSM9DS1_GYRO_LOW_POWER
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG3_M, 0x00 ); // continuous conversion mode
 #else
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG3_M,  (1<<5) | (Mmode | 0x03) ); // continuous conversion mode GYRO LOW POWER
@@ -515,7 +513,7 @@ static void initLSM9DS1(void)
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG4_M, Mmode << 2 ); // select z-axis mode
     writeByte(LSM9DS1M_ADDRESS, LSM9DS1M_CTRL_REG5_M, 0x40 ); // select block update mode
     
-    printk("LSM9DS1 initialized for active data mode....\n");
+//    printk("LSM9DS1 initialized for active data mode....\n");
 
     
 }
@@ -533,7 +531,7 @@ static void sleepGyro(bool enable)
 
     writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9, temp);
     k_sleep(K_MSEC(10));
-    //nrf_delay_ms(10);
+
 }
 
 static void lsm9ds1_channel_get(struct device *dev,
@@ -626,6 +624,7 @@ static void lsm9ds1_sample_fetch(struct device *dev)
     drv_data->gyro_x = (float)gyroCount[0]*gRes - gyroBias[0];  // get actual gyro value, this depends on scale being set
     drv_data->gyro_y = (float)gyroCount[1]*gRes - gyroBias[1];
     drv_data->gyro_z = (float)gyroCount[2]*gRes - gyroBias[2];
+
     sleepGyro(true);
     
     //if (readByte(LSM9DS1M_ADDRESS, LSM9DS1M_STATUS_REG_M) & 0x08) {  // check if new mag data is ready
@@ -663,9 +662,6 @@ static void lsm9ds1_sensor_performance(struct device *dev, bool high)
          Modr = MODR_10Hz;     // mag data sample rate
          Mmode = MMode_HighPerformance;  // magnetometer operation mode
 
-         getAres();
-         getGres();
-         getMres();
     }else{
         // Specify sensor full scale
         OSR = ADC_256; //ADC_4096;      // set pressure amd temperature oversample rate
@@ -679,50 +675,55 @@ static void lsm9ds1_sensor_performance(struct device *dev, bool high)
         Modr = MODR_0_625Hz;    //MODR_10Hz;    // mag data sample rate
         Mmode = MMode_LowPower; //MMode_HighPerformance;  // magnetometer operation mode
 
-        getAres();
-        getGres();
-        getMres();
     }
-    
+
+    getAres();
+    getGres();
+    getMres();
+        
 }
 
 static bool initDone(struct device *dev)
 {
-    u32_t i2c_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD) | I2C_MODE_MASTER;
+
+//    u32_t i2c_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD) | I2C_MODE_MASTER;
+//    struct lsm9ds1_data* drv_data = dev->driver_data;
+//    drv_data->initDone = false;
+//   
+//    drv_data->i2c = device_get_binding(CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
+//    
+//
+//    if (drv_data->i2c == NULL) {
+//        printf("Failed to get pointer to %s device\n", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
+//        //LOG_ERR("Failed to get pointer to %s device", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
+//        return -EINVAL;
+//    }else{
+//    
+//        i2c_configure(drv_data->i2c, i2c_cfg);
+//        
+//    }        
+
     struct lsm9ds1_data* drv_data = dev->driver_data;
     drv_data->initDone = false;
-   
-    drv_data->i2c = device_get_binding(CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
-    
-
-    if (drv_data->i2c == NULL) {
-        printf("Failed to get pointer to %s device\n", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
-        //LOG_ERR("Failed to get pointer to %s device", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
-        return -EINVAL;
-    }else{
-    
-        i2c_configure(drv_data->i2c, i2c_cfg);
-        
-    }        
 
     // Read the WHO_AM_I registers, this is a good test of communication
-    printk("LSM9DS1 9-axis motion sensor...\n");
+//    printk("LSM9DS1 9-axis motion sensor...\n");
 
     int c = readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_WHO_AM_I);  // Read WHO_AM_I register for LSM9DS1 accel/gyro
     int d = readByte(LSM9DS1M_ADDRESS, LSM9DS1M_WHO_AM_I);  // Read WHO_AM_I register for LSM9DS1 magnetometer
     
-    printf("WHO AM I: 0x%x, 0x%x\n", c, d);
+//    printf("WHO AM I: 0x%x, 0x%x\n", c, d);
     
     // WHO_AM_I should always be 0x0E for the accel/gyro and 0x3C for the mag
     if (c == 0x68 && d == 0x3D) {
-        printk("LSM9DS1 is online...\n");
+//        printk("LSM9DS1 is online...\n");
         
         // get sensor resolutions, only need to do this once
         getAres();
         getGres();
         getMres();
         
-        printk(" Calibrate gyro and accel\n");
+//        printk(" Calibrate gyro and accel\n");
         accelgyrocalLSM9DS1(gyroBias, accelBias); // Calibrate gyro and accelerometers, load biases in bias registers
         
         magcalLSM9DS1(magBias);
@@ -735,9 +736,11 @@ static bool initDone(struct device *dev)
         //Sleeping gyro
         sleepGyro(true);
         
-    } else {
-        printf("Could not connect to LSM9DS1: 0x%x\n", c);
     }
+//    else {
+//        printf("Could not connect to LSM9DS1: 0x%x\n", c);
+//    }
+
     drv_data->initDone = true;
     
     return drv_data->initDone;
@@ -753,21 +756,20 @@ static const struct lsm9ds1_api lsm9ds1_driver_api = {
 
 int lsm9ds1_init(struct device *dev)
 {
-//    u32_t i2c_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD) | I2C_MODE_MASTER;
-//    struct lsm9ds1_data* drv_data = dev->driver_data;
-//
-//    drv_data->i2c = device_get_binding(CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
-//
-//
-//    if (drv_data->i2c == NULL) {
+    u32_t i2c_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD) | I2C_MODE_MASTER;
+    struct lsm9ds1_data* drv_data = dev->driver_data;
+
+    drv_data->i2c = device_get_binding(CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
+
+
+    if (drv_data->i2c == NULL) {
 //        printf("Failed to get pointer to %s device\n", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
-//        //LOG_ERR("Failed to get pointer to %s device", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
-//        return -EINVAL;
-//    }else{
-//
-//        i2c_configure(drv_data->i2c, i2c_cfg);
-//
-//    }
+        return -EINVAL;
+    }else{
+
+        i2c_configure(drv_data->i2c, i2c_cfg);
+
+    }
 
     return 0;
 }
