@@ -24,9 +24,6 @@
 
 #include <sensor.h>
 #include <gpio.h>
-//#include <dk_buttons_and_leds.h>
-
-//#include <stdio.h>
 
 #include <lsm9ds1.h> // drivers/sensor/lsm9ds1
 #include "quaternionFilter.h"
@@ -40,11 +37,11 @@
 #error SW0_GPIO_NAME or SW0_GPIO_CONTROLLER needs to be set in board.h
 #endif
 #endif
-#define PORT    SW0_GPIO_CONTROLLER
+#define SW0_PORT    SW0_GPIO_CONTROLLER
 
 /* change this to use another GPIO pin */
 #ifdef SW0_GPIO_PIN
-#define PIN     SW0_GPIO_PIN
+#define BUTTON_PIN     SW0_GPIO_PIN
 #else
 #error SW0_GPIO_PIN needs to be set in board.h
 #endif
@@ -109,19 +106,12 @@ static const struct bt_data ad[] = {
 static struct k_delayed_work leds_update_work;
 static struct k_delayed_work buttons_update_work;
 
-/* Sensor update timer */
-struct k_timer sensor_timer;
-#define TIEMR_INTERVAL_MSEC 100 //ms
-
-
-//static K_SEM_DEFINE(my_sem, 0, 2);
-
-
 /* LED */
 #define LED_PORT LED0_GPIO_CONTROLLER
 #define LED    LED0_GPIO_PIN
 
 static struct device *led_dev;
+
 
 /**@brief Update LEDs state. */
 
@@ -148,7 +138,7 @@ void button_pressed(struct device *gpiob, struct gpio_callback *cb,
             u32_t pins)
 {
 //    printk("Button pressed at %d\n", k_cycle_get_32());
-//    NVIC_SystemReset();
+    NVIC_SystemReset();
 }
 
 static struct gpio_callback button_cb;
@@ -158,7 +148,8 @@ static void buttons_update(struct k_work *work)
 
     while(true){
         u32_t val = 0U;
-        gpio_pin_read(button_gpio, PIN, &val);
+        gpio_pin_read(button_gpio, BUTTON_PIN, &val);
+        k_sleep(K_MSEC(BUTTONS_UPDATE_INTERVAL));
     }
 
 }
@@ -166,9 +157,10 @@ static void buttons_update(struct k_work *work)
 static u32_t micros(void)
 {
 
-   u64_t ticks = (u64_t)((u64_t)overflows << (u64_t)24) | (u64_t)k_uptime_get();
+    u64_t ticks = (u64_t)((u64_t)overflows << (u64_t)24) | (u64_t)k_cycle_get_32();
 
-   return (ticks * 1000000) / 32768;
+    return (ticks * 1000000) / 32768;
+    
 }
 
 // Sensor data
@@ -176,8 +168,6 @@ static void sensor_update(void)
 {
 
     float accel[3], gyro[3], mag[3];
-    
-    memset(mpu_vals, 0, sizeof(mpu_vals));
 
     struct lsm9ds1_api* dev_api = (struct lsm9ds1_api *)dev_lsm9ds1->driver_api;
     dev_api->sample_fetch(dev_lsm9ds1);
@@ -201,26 +191,49 @@ static void sensor_update(void)
 //    printf("temp:     %.2f\n", temp);
 //    printf("qua:   x: %.6f    y: %.6f    z: %.6f    w: %.6f\n", qua.x, qua.y, qua.z, qua.w);
 
-
     memcpy(&mpu_vals[sizeof(float)*0], accel, sizeof(accel));
     memcpy(&mpu_vals[sizeof(float)*3], gyro, sizeof(gyro));
     memcpy(&mpu_vals[sizeof(float)*6], mag, sizeof(mag));
-//    memcpy(&sensor_vals[sizeof(float)*9], &temp, sizeof(temp));
     memcpy(&mpu_vals[sizeof(float)*9], q, sizeof(q));
 
 }
 
-void sensor_timer_interlop(struct k_timer *timer_id)
+static void received_cb(struct bt_conn *conn,
+                          const u8_t *const data, u16_t len)
 {
-      if(p_conn != NULL){
-        if(bmpu_is_notify()){
 
-          sensor_update();
-          bmpu_notify(p_conn, mpu_vals, OUTPUT_BUF_SIZE);
-        }
-      }
-      //k_sleep(K_MSEC(100));
+    if(len > 1){
+        return;
+    }
+    
+    u8_t value = 0;
+    memcpy(&value, data, sizeof(u8_t));
+    
+    enum LSM9DS1_PERFORMANCE performance;
+
+    switch(value){
+       case 0:
+         performance = LOW;
+         break;
+       case 1:
+         performance = MID;
+         break;
+       case 2:
+         performance = HIGH;
+         break;
+       default:
+         performance = LOW;
+         break;
+    }
+
+    struct lsm9ds1_api* dev_api = (struct lsm9ds1_api *)dev_lsm9ds1->driver_api;
+    dev_api->sensor_performance(dev_lsm9ds1, performance);
 }
+
+static struct bt_gatt_mpu_cb mpu_cb = {
+     .received_cb = received_cb,
+};
+
 
 static void connected(struct bt_conn *conn, u8_t err)
 {
@@ -242,6 +255,7 @@ static struct bt_conn_cb conn_callbacks = {
     .disconnected = disconnected,
 };
 
+
 static void bt_ready(int err)
 {
     if (err) {
@@ -252,7 +266,7 @@ static void bt_ready(int err)
 //    printk("Bluetooth initialized\n");
     
     //ble service init.
-    bmpu_init();
+    ble_mpu_init(&mpu_cb);
     
     if (IS_ENABLED(CONFIG_SETTINGS)) {
         settings_load();
@@ -266,11 +280,6 @@ static void bt_ready(int err)
     
 //    printk("Advertising successfully started\n");
 
-    /* Give two semaphores to signal both the led_blink_thread, and
-     * and the ble_write_thread that ble initialized successfully
-     */
-//    k_sem_give(&my_sem);
-//    k_sem_give(&my_sem);
 }
 
 static void work_init(void)
@@ -304,8 +313,12 @@ static void sensor_init(void)
 
     struct lsm9ds1_api* dev_api = (struct lsm9ds1_api *)dev_lsm9ds1->driver_api;
     dev_api->initDone(dev_lsm9ds1);
-    dev_api->sensor_performance(dev_lsm9ds1, false);
 
+    enum LSM9DS1_PERFORMANCE performance;
+    performance = MID;
+    dev_api->sensor_performance(dev_lsm9ds1, performance);
+
+    memset(mpu_vals, 0, sizeof(mpu_vals));
 }
 
 /**@brief Initializes buttons and LEDs, using the DK buttons and LEDs
@@ -326,48 +339,48 @@ static void leds_init(void)
 static void button_init(void)
 {
 //    printk("Press the user defined button on the board\n");
-    button_gpio = device_get_binding(PORT);
+    button_gpio = device_get_binding(SW0_PORT);
     if (!button_gpio) {
 //        printk("error\n");
         return;
     }
 
-    gpio_pin_configure(button_gpio, PIN,
+    gpio_pin_configure(button_gpio, BUTTON_PIN,
                GPIO_DIR_IN | GPIO_INT |  PULL_UP | EDGE);
 
-    gpio_init_callback(&button_cb, button_pressed, BIT(PIN));
+    gpio_init_callback(&button_cb, button_pressed, BIT(BUTTON_PIN));
 
     gpio_add_callback(button_gpio, &button_cb);
-    gpio_pin_enable_callback(button_gpio, PIN);
+    gpio_pin_enable_callback(button_gpio, BUTTON_PIN);
 }
 
 void main(void)
 {
 
 //    k_sleep(K_SECONDS(10));
-
+    
     button_init();
     leds_init();
+    
+    k_sleep(K_MSEC(10));
+    
     sensor_init();
     led_one_shot(200);
     bt_init();
-//    k_sem_take(&my_sem, K_MSEC(100));
     work_init();
-    
+
     while ( true ) {
 
       if(p_conn != NULL){
-        if(bmpu_is_notify()){
-
-          sensor_update();
-          bmpu_notify(p_conn, mpu_vals, OUTPUT_BUF_SIZE);
+        if(ble_mpu_is_notify()){
+            sensor_update();
+            ble_mpu_notify(p_conn, mpu_vals, OUTPUT_BUF_SIZE);
         }
       }
-      k_sleep(K_MSEC(50));
 
       /* Put CPU to idle to save power */
-
-      //k_cpu_idle();
+      k_cpu_idle();
     }
     
 }
+

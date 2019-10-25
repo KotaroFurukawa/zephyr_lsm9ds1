@@ -13,9 +13,15 @@
 #include <zephyr/types.h>
 #include <sensor.h>
 
+enum LSM9DS1_PERFORMANCE {
+  LOW=0,
+  MID,
+  HIGH
+};
+
 typedef void (*lsm9ds1_sample_fetch_t)(struct device *device);
 typedef void (*lsm9ds1_channel_get_t)(struct device *device, enum sensor_channel chan, float *val);
-typedef void (*lsm9ds1_performance_t)(struct device *device, bool high);
+typedef void (*lsm9ds1_performance_t)(struct device *device, enum LSM9DS1_PERFORMANCE perform);
 typedef bool (*lsm9ds1_initDone_t)(struct device *device);
 
 struct lsm9ds1_api {

@@ -647,22 +647,12 @@ static void lsm9ds1_sample_fetch(struct device *dev)
     //return 0;
 }
 
-static void lsm9ds1_sensor_performance(struct device *dev, bool high)
+static void lsm9ds1_sensor_performance(struct device *dev, enum LSM9DS1_PERFORMANCE perform)
 {
-    if(high == true){
-        // Specify sensor full scale
-         OSR = ADC_4096;       // set pressure amd temperature oversample rate
-         Gscale = GFS_2000DPS; // gyro full scale
-         Godr = GODR_238Hz;    // gyro data sample rate
-         Gbw = GBW_med;        // gyro data bandwidth
-         Ascale = AFS_16G;     // accel full scale
-         Aodr = AODR_238Hz;    // accel data sample rate
-         Abw = ABW_50Hz;       // accel data bandwidth
-         Mscale = MFS_4G;      // mag full scale
-         Modr = MODR_10Hz;     // mag data sample rate
-         Mmode = MMode_HighPerformance;  // magnetometer operation mode
 
-    }else{
+    switch(perform){
+      case LOW:
+      {
         // Specify sensor full scale
         OSR = ADC_256; //ADC_4096;      // set pressure amd temperature oversample rate
         Gscale = GFS_245DPS; //GFS_2000DPS; // gyro full scale
@@ -674,7 +664,42 @@ static void lsm9ds1_sensor_performance(struct device *dev, bool high)
         Mscale = MFS_4G;     // mag full scale
         Modr = MODR_0_625Hz;    //MODR_10Hz;    // mag data sample rate
         Mmode = MMode_LowPower; //MMode_HighPerformance;  // magnetometer operation mode
+      }
+        break;
 
+      case MID:
+      {
+       // Specify sensor full scale
+        OSR = ADC_256; //ADC_4096;      // set pressure amd temperature oversample rate
+        Gscale = GFS_245DPS; //GFS_2000DPS; // gyro full scale
+        Godr = GODR_14_9Hz;  //GODR_238Hz;   // gyro data sample rate
+        Gbw = GBW_low; //GBW_med;       // gyro data bandwidth
+         Ascale = AFS_8G;     // accel full scale
+         Aodr = AODR_238Hz;    // accel data sample rate
+         Abw = ABW_50Hz;       // accel data bandwidth
+         Mscale = MFS_4G;      // mag full scale
+         Modr = MODR_10Hz;     // mag data sample rate
+         Mmode = MMode_MedPerformance;  // magnetometer operation mode            
+      }
+        break;
+
+      case HIGH:
+      {
+       // Specify sensor full scale
+         OSR = ADC_4096;       // set pressure amd temperature oversample rate
+         Gscale = GFS_2000DPS; // gyro full scale
+         Godr = GODR_238Hz;    // gyro data sample rate
+         Gbw = GBW_med;        // gyro data bandwidth
+         Ascale = AFS_16G;     // accel full scale
+         Aodr = AODR_238Hz;    // accel data sample rate
+         Abw = ABW_50Hz;       // accel data bandwidth
+         Mscale = MFS_4G;      // mag full scale
+         Modr = MODR_5Hz;     // mag data sample rate
+         Mmode = MMode_HighPerformance;  // magnetometer operation mode      
+      }
+        break;
+      default:
+        break;
     }
 
     getAres();
