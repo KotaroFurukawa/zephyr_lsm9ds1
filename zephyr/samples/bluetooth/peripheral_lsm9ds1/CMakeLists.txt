@@ -4,9 +4,8 @@ project(NONE)
 
 target_sources(app PRIVATE
   src/main.c
-  src/quaternionFilter.c
+  src/MadgwickAHRS.c
   src/services/ble_mpu.c
 )
 
 zephyr_library_include_directories($ENV{ZEPHYR_BASE}/drivers/sensor/lsm9ds1)
-zephyr_library_include_directories($ENV{ZEPHYR_BASE}/samples/bluetooth)

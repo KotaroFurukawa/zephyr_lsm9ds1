@@ -181,16 +181,27 @@ enum Modr {  // set of allowable mag sample rates
 #define ADC_D2   0x50
 
 // Specify sensor full scale
-uint8_t OSR = ADC_4096;      // set pressure amd temperature oversample rate
+uint8_t OSR = ADC_256;      // set pressure amd temperature oversample rate
 uint8_t Gscale = GFS_2000DPS; // gyro full scale ( default GFS_245DPS )
-uint8_t Godr = GODR_238Hz;   // gyro data sample rate
-uint8_t Gbw = GBW_med;       // gyro data bandwidth
+uint8_t Godr = GODR_59_5Hz;   // gyro data sample rate
+uint8_t Gbw = GBW_low;       // gyro data bandwidth
 uint8_t Ascale = AFS_16G;     // accel full scale ( default AFS_2G )
-uint8_t Aodr = AODR_238Hz;   // accel data sample rate
+uint8_t Aodr = AODR_50Hz;   // accel data sample rate
 uint8_t Abw = ABW_50Hz;      // accel data bandwidth
-uint8_t Mscale = MFS_4G;     // mag full scale
+uint8_t Mscale = MFS_12G;     // mag full scale
 uint8_t Modr = MODR_10Hz;    // mag data sample rate
-uint8_t Mmode = MMode_HighPerformance;  // magnetometer operation mode
+uint8_t Mmode = MMode_LowPower;  // magnetometer operation mode
+
+//uint8_t OSR = ADC_1024;      // set pressure amd temperature oversample rate
+//uint8_t Gscale = GFS_2000DPS; // gyro full scale ( default GFS_245DPS )
+//uint8_t Godr = GODR_238Hz;   // gyro data sample rate
+//uint8_t Gbw = GBW_med;       // gyro data bandwidth
+//uint8_t Ascale = AFS_16G;     // accel full scale ( default AFS_2G )
+//uint8_t Aodr = AODR_238Hz;   // accel data sample rate
+//uint8_t Abw = ABW_211Hz;      // accel data bandwidth
+//uint8_t Mscale = MFS_12G;     // mag full scale
+//uint8_t Modr = MODR_10Hz;    // mag data sample rate
+//uint8_t Mmode = MMode_MedPerformance;  // magnetometer operation mode
 
 float aRes, gRes, mRes;      // scale resolutions per LSB for the sensors
 
@@ -518,21 +529,21 @@ static void initLSM9DS1(void)
     
 }
 
-static void sleepGyro(bool enable)
-{
-
-    uint8_t temp = readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9);
-
-    if (enable){
-       temp |= (1<<6);
-    } else {
-       temp &= ~(1<<6);
-    }
-
-    writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9, temp);
-    k_sleep(K_MSEC(10));
-
-}
+//static void sleepGyro(bool enable)
+//{
+//
+//    uint8_t temp = readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9);
+//
+//    if (enable){
+//       temp |= (1<<6);
+//    } else {
+//       temp &= ~(1<<6);
+//    }
+//
+//    writeByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_CTRL_REG9, temp);
+//    //k_sleep(K_MSEC(10));
+//
+//}
 
 static void lsm9ds1_channel_get(struct device *dev,
                                enum sensor_channel chan,
@@ -607,7 +618,7 @@ static void lsm9ds1_sample_fetch(struct device *dev)
 {
     struct lsm9ds1_data *drv_data = dev->driver_data;
 
-    sleepGyro(false);
+//    sleepGyro(false);
     
     //if (readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_STATUS_REG) & 0x01) {  // check if new accel data is ready
     readAccelData(accelCount);  // Read the x/y/z adc values
@@ -625,7 +636,7 @@ static void lsm9ds1_sample_fetch(struct device *dev)
     drv_data->gyro_y = (float)gyroCount[1]*gRes - gyroBias[1];
     drv_data->gyro_z = (float)gyroCount[2]*gRes - gyroBias[2];
 
-    sleepGyro(true);
+//    sleepGyro(true);
     
     //if (readByte(LSM9DS1M_ADDRESS, LSM9DS1M_STATUS_REG_M) & 0x08) {  // check if new mag data is ready
     readMagData(magCount);  // Read the x/y/z adc values
@@ -647,7 +658,7 @@ static void lsm9ds1_sample_fetch(struct device *dev)
     //return 0;
 }
 
-static void lsm9ds1_sensor_performance(struct device *dev, enum LSM9DS1_PERFORMANCE perform)
+static void lsm9ds1_sensor_performance(struct device *dev, lsm9ds1_perform perform)
 {
 
     switch(perform){
@@ -708,30 +719,10 @@ static void lsm9ds1_sensor_performance(struct device *dev, enum LSM9DS1_PERFORMA
         
 }
 
-static bool initDone(struct device *dev)
+static bool init_done(struct device *dev)
 {
 
-//    u32_t i2c_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD) | I2C_MODE_MASTER;
-//    struct lsm9ds1_data* drv_data = dev->driver_data;
-//    drv_data->initDone = false;
-//   
-//    drv_data->i2c = device_get_binding(CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
-//    
-//
-//    if (drv_data->i2c == NULL) {
-//        printf("Failed to get pointer to %s device\n", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
-//        //LOG_ERR("Failed to get pointer to %s device", CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
-//        return -EINVAL;
-//    }else{
-//    
-//        i2c_configure(drv_data->i2c, i2c_cfg);
-//        
-//    }        
-
-    struct lsm9ds1_data* drv_data = dev->driver_data;
-    drv_data->initDone = false;
-
-    // Read the WHO_AM_I registers, this is a good test of communication
+//    Read the WHO_AM_I registers, this is a good test of communication
 //    printk("LSM9DS1 9-axis motion sensor...\n");
 
     int c = readByte(LSM9DS1XG_ADDRESS, LSM9DS1XG_WHO_AM_I);  // Read WHO_AM_I register for LSM9DS1 accel/gyro
@@ -759,16 +750,16 @@ static bool initDone(struct device *dev)
         k_sleep(K_MSEC(10));
         
         //Sleeping gyro
-        sleepGyro(true);
+//        sleepGyro(true);
         
-    }
-//    else {
+    } else {
 //        printf("Could not connect to LSM9DS1: 0x%x\n", c);
-//    }
+        return false;
+    }
 
-    drv_data->initDone = true;
+//    drv_data->initDone = true;
     
-    return drv_data->initDone;
+    return true;
 }
 
 
@@ -776,7 +767,7 @@ static const struct lsm9ds1_api lsm9ds1_driver_api = {
     .sample_fetch = lsm9ds1_sample_fetch,
     .channel_get = lsm9ds1_channel_get,
     .sensor_performance = lsm9ds1_sensor_performance,
-    .initDone           = initDone,
+    .init_done           = init_done,
 };
 
 int lsm9ds1_init(struct device *dev)
@@ -804,4 +795,3 @@ DEVICE_AND_API_INIT(lsm9ds1, CONFIG_LSM9DS1_NAME, lsm9ds1_init, &lsm9ds1_driver,
                     &lsm9ds1_driver_api);
 
 /** @} */
-

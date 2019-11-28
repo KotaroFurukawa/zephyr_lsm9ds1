@@ -13,22 +13,22 @@
 #include <zephyr/types.h>
 #include <sensor.h>
 
-enum LSM9DS1_PERFORMANCE {
+typedef enum {
   LOW=0,
   MID,
   HIGH
-};
+} lsm9ds1_perform ;
 
 typedef void (*lsm9ds1_sample_fetch_t)(struct device *device);
 typedef void (*lsm9ds1_channel_get_t)(struct device *device, enum sensor_channel chan, float *val);
-typedef void (*lsm9ds1_performance_t)(struct device *device, enum LSM9DS1_PERFORMANCE perform);
+typedef void (*lsm9ds1_performance_t)(struct device *device, lsm9ds1_perform perform);
 typedef bool (*lsm9ds1_initDone_t)(struct device *device);
 
 struct lsm9ds1_api {
     lsm9ds1_sample_fetch_t sample_fetch;
     lsm9ds1_channel_get_t  channel_get;
     lsm9ds1_performance_t  sensor_performance;
-    lsm9ds1_initDone_t     initDone;
+    lsm9ds1_initDone_t     init_done;
 };
 
 struct lsm9ds1_data {
@@ -48,7 +48,6 @@ struct lsm9ds1_data {
     
     float temperature_c;
 
-    bool  initDone;
 };
 
 

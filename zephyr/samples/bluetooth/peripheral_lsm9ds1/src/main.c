@@ -26,7 +26,8 @@
 #include <gpio.h>
 
 #include <lsm9ds1.h> // drivers/sensor/lsm9ds1
-#include "quaternionFilter.h"
+
+#include "MadgwickAHRS.h"
 #include "services/ble_mpu.h"
 
 /* change this to use another GPIO port */
@@ -67,22 +68,12 @@
 #endif
 #define PULL_UP SW0_GPIO_FLAGS
 
-/* Sleep time */
-#define SLEEP_TIME    500
-
 /* Button */
 struct device *button_gpio;
 
-//IMU Quaternion value.
-float q[4] = {1.0f, 0.0f, 0.0f, 0.0f};    // vector to hold quaternion
-float deltat;                            // integration interval for both filter schemes
-uint32_t lastUpdate;
-uint32_t Now;
-float pitch, yaw, roll;
-float eInt[3] = {0.0f, 0.0f, 0.0f};       // vector to hold integral error for Mahony method
-
-static volatile uint32_t overflows = 0;
-
+/* LED */
+#define LED_PORT LED0_GPIO_CONTROLLER
+#define LED    LED0_GPIO_PIN
 static struct device* dev_lsm9ds1;
 
 //bt
@@ -99,19 +90,17 @@ static const struct bt_data ad[] = {
 
 
 /* Interval in milliseconds between each time status LEDs are updated. */
-#define LEDS_UPDATE_INTERVAL            500
-#define BUTTONS_UPDATE_INTERVAL         500
+#define LEDS_UPDATE_DELAY            500
 
 /* Structures for work */
 static struct k_delayed_work leds_update_work;
-static struct k_delayed_work buttons_update_work;
+
 
 /* LED */
 #define LED_PORT LED0_GPIO_CONTROLLER
 #define LED    LED0_GPIO_PIN
 
 static struct device *led_dev;
-
 
 /**@brief Update LEDs state. */
 
@@ -138,36 +127,17 @@ void button_pressed(struct device *gpiob, struct gpio_callback *cb,
             u32_t pins)
 {
 //    printk("Button pressed at %d\n", k_cycle_get_32());
-    NVIC_SystemReset();
 }
 
 static struct gpio_callback button_cb;
 
-static void buttons_update(struct k_work *work)
-{
 
-    while(true){
-        u32_t val = 0U;
-        gpio_pin_read(button_gpio, BUTTON_PIN, &val);
-        k_sleep(K_MSEC(BUTTONS_UPDATE_INTERVAL));
-    }
-
-}
-
-static u32_t micros(void)
-{
-
-    u64_t ticks = (u64_t)((u64_t)overflows << (u64_t)24) | (u64_t)k_cycle_get_32();
-
-    return (ticks * 1000000) / 32768;
-    
-}
 
 // Sensor data
 static void sensor_update(void)
 {
 
-    float accel[3], gyro[3], mag[3];
+    float accel[3], gyro[3], mag[3], gyro_rad[3], q[4];
 
     struct lsm9ds1_api* dev_api = (struct lsm9ds1_api *)dev_lsm9ds1->driver_api;
     dev_api->sample_fetch(dev_lsm9ds1);
@@ -177,19 +147,21 @@ static void sensor_update(void)
     dev_api->channel_get(dev_lsm9ds1, SENSOR_CHAN_MAGN_XYZ,  mag);
 //    dev_api->channel_get(dev, SENSOR_CHAN_DIE_TEMP,  &temp);
     
-    Now = micros();
-    deltat = ((Now - lastUpdate)/1000000.0f); // set integration time by time elapsed since last filter update
-    lastUpdate = Now;
+    for(int i = 0; i < 3; i ++){
+        gyro_rad[i] = gyro[i] * 3.1415926535 / 180;
+    }
 
-    MadgwickQuaternionUpdate( accel[0], accel[1], accel[2],
-                              gyro[0]*PI/180.0f, gyro[1]*PI/180.0f, gyro[2]*PI/180.0f,
-                             -mag[0], mag[1], mag[2] );
+    MadgwickAHRSupdate(gyro_rad[0], gyro_rad[1], gyro_rad[2],
+                       accel[0], accel[1], accel[2],
+                       mag[0], mag[1], mag[2]);
 
 //    printf("acc:   x: %.6f    y: %.6f    z: %.6f\n", accel[0], accel[1], accel[2]);
 //    printf("gyr:   x: %.6f    y: %.6f    z: %.6f\n", gyro[0], gyro[1], gyro[2]);
 //    printf("mag:   x: %.6f    y: %.6f    z: %.6f\n", mag[0], mag[1], mag[2]);
 //    printf("temp:     %.2f\n", temp);
 //    printf("qua:   x: %.6f    y: %.6f    z: %.6f    w: %.6f\n", qua.x, qua.y, qua.z, qua.w);
+
+    q[0] = q0; q[1] = q1; q[2] = q2; q[3] = q3;
 
     memcpy(&mpu_vals[sizeof(float)*0], accel, sizeof(accel));
     memcpy(&mpu_vals[sizeof(float)*3], gyro, sizeof(gyro));
@@ -209,7 +181,7 @@ static void received_cb(struct bt_conn *conn,
     u8_t value = 0;
     memcpy(&value, data, sizeof(u8_t));
     
-    enum LSM9DS1_PERFORMANCE performance;
+    lsm9ds1_perform performance;
 
     switch(value){
        case 0:
@@ -286,10 +258,7 @@ static void work_init(void)
 {
 
     k_delayed_work_init(&leds_update_work, leds_update);
-    k_delayed_work_init(&buttons_update_work, buttons_update);
-
-    k_delayed_work_submit(&leds_update_work, LEDS_UPDATE_INTERVAL);
-    k_delayed_work_submit(&buttons_update_work, BUTTONS_UPDATE_INTERVAL);
+    k_delayed_work_submit(&leds_update_work, LEDS_UPDATE_DELAY);
 }
 
 static void bt_init(void)
@@ -312,13 +281,10 @@ static void sensor_init(void)
     dev_lsm9ds1 = device_get_binding("LSM9DS1");
 
     struct lsm9ds1_api* dev_api = (struct lsm9ds1_api *)dev_lsm9ds1->driver_api;
-    dev_api->initDone(dev_lsm9ds1);
+    dev_api->init_done(dev_lsm9ds1);
 
-    enum LSM9DS1_PERFORMANCE performance;
-    performance = MID;
-    dev_api->sensor_performance(dev_lsm9ds1, performance);
+//    memset(mpu_vals, 0, sizeof(mpu_vals));
 
-    memset(mpu_vals, 0, sizeof(mpu_vals));
 }
 
 /**@brief Initializes buttons and LEDs, using the DK buttons and LEDs
@@ -326,13 +292,11 @@ static void sensor_init(void)
  */
 static void leds_init(void)
 {
-//    int err;
 
     led_dev = device_get_binding(LED_PORT);
+    
     /* Set LED pin as output */
     gpio_pin_configure(led_dev, LED, GPIO_DIR_OUT);
-    
-    led_one_shot(200);
 
 }
 
@@ -362,10 +326,10 @@ void main(void)
     button_init();
     leds_init();
     
-    k_sleep(K_MSEC(10));
-    
+    led_one_shot(200);
     sensor_init();
     led_one_shot(200);
+
     bt_init();
     work_init();
 

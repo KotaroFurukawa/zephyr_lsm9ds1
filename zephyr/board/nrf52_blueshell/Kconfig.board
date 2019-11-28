@@ -8,6 +8,11 @@
 config BOARD_NRF52_BLUESHELL
 	bool "nRF52 BLUESHELL"
 	depends on SOC_NRF52832_QFAA
+# Kconfig - nRF52 Blueshell board configuration
+#
+# Copyright (c) 2016 Nordic Semiconductor ASA
+#
+# SPDX-License-Identifier: Apache-2.0
 
 if BOARD_NRF52_BLUESHELL
 
