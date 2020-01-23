@@ -4,6 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/* Original Arduino library: https://github.com/kriswiner/LSM9DS1
+*
+* LSM9DS1_MS5611_t3 Basic Example Code
+* by: Kris Winer
+* date: November 1, 2014
+* license: Beerware - Use this code however you'd like. If you
+* find it useful you can buy me a beer some time.
+*/
+
+
 #include <stdio.h>
 #include <i2c.h>
 #include <init.h>
@@ -721,6 +731,14 @@ static void lsm9ds1_sensor_performance(struct device *dev, lsm9ds1_perform perfo
 
 static bool init_done(struct device *dev)
 {
+
+    struct lsm9ds1_data* drv_data = dev->driver_data;
+
+    if (drv_data->i2c == NULL) {
+        u32_t i2c_cfg = I2C_SPEED_SET(I2C_SPEED_STANDARD) | I2C_MODE_MASTER;
+        drv_data->i2c = device_get_binding(CONFIG_LSM9DS1_I2C_MASTER_DEV_NAME);
+        i2c_configure(drv_data->i2c, i2c_cfg);
+    }
 
 //    Read the WHO_AM_I registers, this is a good test of communication
 //    printk("LSM9DS1 9-axis motion sensor...\n");
